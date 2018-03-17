@@ -1,5 +1,5 @@
 # build file
 *.o
-
+rdt_sim
 # ctags file
 tags
