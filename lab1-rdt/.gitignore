@@ -1,0 +1,5 @@
+# build file
+*.o
+
+# ctags file
+tags
