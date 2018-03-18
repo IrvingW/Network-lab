@@ -60,11 +60,13 @@ void Receiver_FromLowerLayer(struct packet *pkt)
 	seq_nr received_seq = (f->seq_ack & 0x3F);
 
 	// if not expected packet, just drop it
-	if(packet_expected != received_seq)
+	if(packet_expected != received_seq){
+		send_ACK(REQ, packet_expected);
 		return;
+	}
 	
 	if(verify_checksum(f) == false){
-		send_ACK(NAK, received_seq);
+		//send_ACK(NAK, received_seq);
 		return;
 	}
 

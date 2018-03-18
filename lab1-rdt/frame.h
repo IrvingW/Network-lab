@@ -7,6 +7,7 @@
 #define NORMAL 0
 #define ACK 1
 #define NAK 2
+#define REQ 3
 
 #define MAX_SEQ 20
 #define WINDOW_SIZE 10

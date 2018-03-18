@@ -21,7 +21,7 @@
 	seq_or_ack	============== 1 byte
 		|
 		|----- 2 bit ack mark(00 for normal package, 01 for ack, 10 for nak)
-		|----- 6 bit for seq numebr(MAX_SEQ = 10)
+		|----- 6 bit for seq numebr
 */
 
 #include <stdio.h>
@@ -282,16 +282,13 @@ void Sender_FromLowerLayer(struct packet *pkt)
 		return;
 	}
 	
-	char seq_ack =  f->seq_ack;
-	int ack_mark = seq_ack >> 6;
+	unsigned char seq_ack =  f->seq_ack;
+	int ack_mark = seq_ack >> 6;		// !!! logicall right shift , must be unsigned char
 	seq_nr ack_received = seq_ack & 0x3F;	// mask ack_mark(0011 1111)
 	// acknowledge
 	if(ack_mark == ACK){
 		// if ack_reveived is bigger than ack_expected
 		// clear buffer and timmer before ack_received
-
-		/*TODO*/
-		// print log
 		if(between(ack_expected, ack_received, next_to_send)){
 			while(between(ack_expected, ack_received, next_to_send)){
 			// buffer_cnt should be update last because it is a lock
@@ -302,17 +299,32 @@ void Sender_FromLowerLayer(struct packet *pkt)
 			deal_message();		// have empty seat in window
 		}
 
-	}else if(ack_mark == NAK){	// not acknowledge
+	}
+	/*
+	else if(ack_mark == NAK){	// not acknowledge
 		// packet occur data corrupt
 		next_to_send = ack_received;
 		for(int j = 0; j < buffered_cnt; j++){
 			resend_packet(next_to_send);
 			inc(next_to_send);
 		}
-	}else{
+
+	}
+*/	
+	else if(ack_mark == REQ) {
+		if(ack_received == next_to_send){	// in case of that all ack paket was lost
+			while(buffered_cnt > 0){
+				buffer_timer[ack_expected] = -1;	// clear timer
+				buffered_cnt --;	// make a room for comming packet in buffer
+				inc(ack_expected);
+			}
+			deal_message();		// have empty seat in window
+		}
+	}
+	
+	else{
 		// code should not reach here
 		//assert(0);
-		return;
 	}
 	
 }
