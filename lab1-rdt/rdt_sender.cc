@@ -13,7 +13,7 @@
  *       (excluding this single-byte header)
  */
 
-/*
+/*	new structure
 	frame structure
 		total 128 byte
 	checksum ================= 2 byte
@@ -33,13 +33,12 @@
 #include "rdt_struct.h"
 #include "rdt_sender.h"
 
-/* SEQ number range is from 0 to 9, window size is 10 */
+/* SEQ number range is from 0 to 20, window size is 10 */
 
 #define MIN_TIME 0.05
 
 #define TIME_OUT 6
 
-#define BUFFER_SIZE 1024
 
 int buffered_cnt;									// bufferd frame count in frame buffer
 													//     whick is 10

@@ -23,7 +23,6 @@ void fill_checksum(frame *f){
 		sum = (sum & 0xFFFF) + (sum >> 16);
 	}
 	short checksum = ~sum;	
-	sum = checksum + sum;
 	f->checksum = checksum;
 }
 
