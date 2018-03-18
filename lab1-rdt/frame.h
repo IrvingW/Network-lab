@@ -8,7 +8,8 @@
 #define ACK 1
 #define NAK 2
 
-#define MAX_SEQ 9
+#define MAX_SEQ 20
+#define WINDOW_SIZE 10
 #define inc(k) if(k == MAX_SEQ) k = 0; else k = k+1;	// increase sequence number
 
 #include "rdt_struct.h"

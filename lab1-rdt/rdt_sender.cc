@@ -61,7 +61,7 @@ struct msg_buffer * msg_buffer_tail = NULL;		// used to store into buffer
 /* ====================================== */
 
 // used to finish this
-#define SLEEP_TIME_MAX 10
+#define SLEEP_TIME_MAX 3 
 int sleep_time;
 
 
@@ -72,7 +72,7 @@ seq_nr next_to_send; 	// the seq number of next frame to send
 static void resend_packet(seq_nr seq);
 static bool between(seq_nr a, seq_nr b, seq_nr c);
 
-FILE * log_file = NULL;
+//FILE * log_file = NULL;
 
 /* sender initialization, called once at the very beginning */
 void Sender_Init()
@@ -92,7 +92,7 @@ void Sender_Init()
 	Sender_StartTimer(MIN_TIME);
     fprintf(stdout, "At %.2fs: sender initializing ...\n", GetSimulationTime());
 
-	log_file = fopen("sender.log", "w");
+//	log_file = fopen("sender.log", "w");
 }
 
 /* sender finalization, called once at the very end.
@@ -112,7 +112,7 @@ void Sender_Final()
 
 static bool send_message(message *msg){
 	// judege the window status now
-	if(buffered_cnt >= MAX_SEQ){
+	if(buffered_cnt >= WINDOW_SIZE){
 		return false;
 	}
 
@@ -127,7 +127,7 @@ static bool send_message(message *msg){
     
 	/* split the message if it is too big */
     while (msg->size-cursor > maxpayload_size) {
-		if(buffered_cnt >= MAX_SEQ){	
+		if(buffered_cnt >= WINDOW_SIZE){	
 			// update message
 			int remain_size = msg->size - cursor;
 			char *new_data = (char *)malloc(remain_size);
@@ -165,7 +165,7 @@ static bool send_message(message *msg){
     /* send out the last packet */
     if (msg->size > cursor) {
 		// check window status	
-		if (buffered_cnt >= MAX_SEQ){		// loop for a while when buffer is full
+		if (buffered_cnt >= WINDOW_SIZE){		// loop for a while when buffer is full
 			// update message
 			int remain_size = msg->size - cursor;
 			char *new_data = (char *)malloc(remain_size);
@@ -292,8 +292,6 @@ void Sender_FromLowerLayer(struct packet *pkt)
 
 		/*TODO*/
 		// print log
-		fprintf(log_file, "before:\n");
-		fprintf(log_file, "ack_expected %d, received_ack %d, next_to_send %d, buffer_cnt %d\n", ack_expected, ack_received, next_to_send, buffered_cnt);
 		if(between(ack_expected, ack_received, next_to_send)){
 			while(between(ack_expected, ack_received, next_to_send)){
 			// buffer_cnt should be update last because it is a lock
@@ -304,16 +302,13 @@ void Sender_FromLowerLayer(struct packet *pkt)
 			deal_message();		// have empty seat in window
 		}
 
-		fprintf(log_file, "after\n");
-		fprintf(log_file, "ack_expected %d, received_ack %d, next_to_send %d, buffer_cnt %d\n", ack_expected, ack_received, next_to_send, buffered_cnt);
-		fprintf(log_file, "\n\n");
-		fprintf(log_file, "===========================================================");
-		fprintf(log_file, "\n\n");
-		fflush(log_file);
-
 	}else if(ack_mark == NAK){	// not acknowledge
 		// packet occur data corrupt
-		resend_packet(ack_received);	
+		next_to_send = ack_received;
+		for(int j = 0; j < buffered_cnt; j++){
+			resend_packet(next_to_send);
+			inc(next_to_send);
+		}
 	}else{
 		// code should not reach here
 		//assert(0);
