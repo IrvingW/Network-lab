@@ -12,13 +12,15 @@ all: $(TARGETS)
 .cc.o:
 	g++ $(CCFLAGS) -c -o $@ $<
 
-rdt_sender.o: 	rdt_struct.h rdt_sender.h
+rdt_sender.o: 	rdt_struct.h rdt_sender.h frame.h
 
-rdt_receiver.o:	rdt_struct.h rdt_receiver.h 
+rdt_receiver.o:	rdt_struct.h rdt_receiver.h frame.h
+
+frame.o: frame.h
 
 rdt_sim.o: 	rdt_struct.h
 
-rdt_sim: rdt_sim.o rdt_sender.o rdt_receiver.o
+rdt_sim: rdt_sim.o rdt_sender.o rdt_receiver.o frame.o
 	g++ $(LDFLAGS) -o $@ $^
 
 clean:
