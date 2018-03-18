@@ -3,3 +3,6 @@
 rdt_sim
 # ctags file
 tags
+
+#log files
+*.log

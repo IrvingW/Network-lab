@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <semaphore.h>
 
 #include "frame.h"
 #include "rdt_struct.h"
@@ -34,15 +35,36 @@
 
 /* SEQ number range is from 0 to 9, window size is 10 */
 
-#define MIN_TIME 0.1
+#define MIN_TIME 0.05
 
-#define TIME_OUT 3
+#define TIME_OUT 6
+
+#define BUFFER_SIZE 1024
 
 int buffered_cnt;									// bufferd frame count in frame buffer
 													//     whick is 10
 struct packet * packet_buffer[MAX_SEQ + 1];			// frame buffer
 int buffer_timer[MAX_SEQ + 1];						// timer for packets have not been acknowledge
  													// timer is initialized with -1
+
+
+/* To solve the windwo frozen problem, I need a message buffer to store unsend message*/
+
+struct msg_buffer{
+	message * msg;
+	msg_buffer *next;
+};
+
+struct msg_buffer * msg_buffer_head = NULL;		// used to fetch from buffer
+struct msg_buffer * msg_buffer_tail = NULL;		// used to store into buffer
+
+/* ====================================== */
+
+// used to finish this
+#define SLEEP_TIME_MAX 10
+int sleep_time;
+
+
 
 seq_nr ack_expected;								// the oldest frame has not been ack
 seq_nr next_to_send; 	// the seq number of next frame to send
@@ -63,10 +85,14 @@ void Sender_Init()
 		packet_buffer[i] = (struct packet*) malloc(sizeof(struct packet));
 		buffer_timer[i] = -1;
 	}
+	msg_buffer_head = (struct msg_buffer *) malloc(sizeof(struct msg_buffer));
+	msg_buffer_tail = msg_buffer_head;
+	sleep_time = 0;
+	// start timer
 	Sender_StartTimer(MIN_TIME);
     fprintf(stdout, "At %.2fs: sender initializing ...\n", GetSimulationTime());
 
-	log_file = fopen("sender_log", "w");
+	log_file = fopen("sender.log", "w");
 }
 
 /* sender finalization, called once at the very end.
@@ -78,26 +104,39 @@ void Sender_Final()
 	for(int i = 0; i <= MAX_SEQ; i++){
 		free(packet_buffer[i]);
 	}
+	// bool equal = (msg_buffer_head == msg_buffer_tail);
+	
+	free(msg_buffer_tail);
     fprintf(stdout, "At %.2fs: sender finalizing ...\n", GetSimulationTime());
 }
 
-
-/* event handler, called when a message is passed from the upper layer at the 
-   sender */
-void Sender_FromUpperLayer(struct message *msg)
-{
+static bool send_message(message *msg){
+	// judege the window status now
+	if(buffered_cnt >= MAX_SEQ){
+		return false;
+	}
 
     /* maximum payload size */
     int maxpayload_size = RDT_PKTSIZE - HEADER_SIZE;
 	
 	// use frame pointer to fill pakcet
-    packet pkt;
+    struct packet pkt;
 	frame *f = (frame *)&pkt;
     int cursor = 0;			// cursor point to the beginning of unsend data in message
 
     
 	/* split the message if it is too big */
     while (msg->size-cursor > maxpayload_size) {
+		if(buffered_cnt >= MAX_SEQ){	
+			// update message
+			int remain_size = msg->size - cursor;
+			char *new_data = (char *)malloc(remain_size);
+			memcpy(new_data, msg->data+cursor, remain_size);
+			free(msg->data);
+			msg->data = new_data;
+			msg->size = remain_size;
+			return false;
+		}
 		/* fill in the packet */
 		f->payload_size = maxpayload_size;
 		memcpy(f->payload, msg->data+cursor, maxpayload_size);
@@ -107,12 +146,6 @@ void Sender_FromUpperLayer(struct message *msg)
 		fill_checksum(f);
 
 		/* send it out through the lower layer */
-		if(buffered_cnt > MAX_SEQ){		
-			// loop is wrong because this is single thread model
-			for(seq_nr i = 0; i <= MAX_SEQ; i++){
-				resend_packet(ack_expected + i);		// resend all packets in buffer first
-			}
-		}
 		buffered_cnt ++;		// should add buffered_cnt first, because this number is the lock
 		// copy into buffer
 		memcpy(packet_buffer[next_to_send], &pkt, RDT_PKTSIZE);
@@ -131,6 +164,17 @@ void Sender_FromUpperLayer(struct message *msg)
 
     /* send out the last packet */
     if (msg->size > cursor) {
+		// check window status	
+		if (buffered_cnt >= MAX_SEQ){		// loop for a while when buffer is full
+			// update message
+			int remain_size = msg->size - cursor;
+			char *new_data = (char *)malloc(remain_size);
+			memcpy(new_data, msg->data+cursor, remain_size);
+			free(msg->data);
+			msg->data = new_data;
+			msg->size = remain_size;
+			return false;
+		}
 		/* fill in the packet */
 		f->payload_size = msg->size-cursor;
 		memcpy(f->payload, msg->data+cursor, f->payload_size);
@@ -139,10 +183,7 @@ void Sender_FromUpperLayer(struct message *msg)
 		// calculate checksum
 		fill_checksum(f);
 		
-		while(buffered_cnt > MAX_SEQ)		// loop for a while when buffer is full
-			// loop is wrong because this is single thread model
-			resend_packet(ack_expected);		// resend all packets in buffer
-		
+
 		buffered_cnt ++;		// should add buffered_cnt first, because this number is the lock
 
 		// copy into buffer
@@ -156,6 +197,53 @@ void Sender_FromUpperLayer(struct message *msg)
 		// increase next_to_send
 		inc(next_to_send);
     }
+
+	return true;	// send success
+}
+
+static void deal_message(){
+	// window not full, fetch message and send
+	while(msg_buffer_head != msg_buffer_tail){	// msg buffer not empty
+		message *msg = msg_buffer_head->msg;
+		if(send_message(msg) == true){
+			// send success
+			free(msg->data);
+			free(msg);
+			msg_buffer * new_head = msg_buffer_head->next;
+			free(msg_buffer_head);
+			msg_buffer_head = new_head;
+		}else{
+			// window full
+			return;
+		}	
+	}
+
+	
+}
+
+static struct message* copy_message(struct message *msg){
+	struct message * new_msg = (struct message *) malloc(sizeof(message));
+	new_msg->size = msg->size;
+	new_msg->data = (char *) malloc(new_msg->size);
+	memcpy(new_msg->data, msg->data, new_msg->size);
+	return new_msg;
+}
+
+
+/* event handler, called when a message is passed from the upper layer at the 
+   sender */
+void Sender_FromUpperLayer(struct message *msg)
+{
+	sleep_time = 0;
+	// all message should be put into message buffer first
+	msg_buffer_tail->msg = copy_message(msg);	// need to copy message because the message will be free after fomrUpperlayer
+	msg_buffer * new_buffer = (msg_buffer *)malloc(sizeof(msg_buffer));
+	msg_buffer_tail->next = new_buffer;
+	msg_buffer_tail = new_buffer;
+
+	// trying to fetch from buffer and send, if the window is full, deal_msg will return
+	deal_message();
+	return;
 }
 
 // return true if a <= b < c circularly
@@ -205,16 +293,19 @@ void Sender_FromLowerLayer(struct packet *pkt)
 		/*TODO*/
 		// print log
 		fprintf(log_file, "before:\n");
-		fprintf(log_file, "ack_expected %d, received_ack %d, next_to_send %d\n", ack_expected, ack_received, next_to_send);
-		while(between(ack_expected, ack_received, next_to_send)){
+		fprintf(log_file, "ack_expected %d, received_ack %d, next_to_send %d, buffer_cnt %d\n", ack_expected, ack_received, next_to_send, buffered_cnt);
+		if(between(ack_expected, ack_received, next_to_send)){
+			while(between(ack_expected, ack_received, next_to_send)){
 			// buffer_cnt should be update last because it is a lock
-			buffer_timer[ack_expected] = -1;	// clear timer
-			buffered_cnt --;	// make a room for comming packet in buffer
-			inc(ack_expected);
-			// clear timmer
+				buffer_timer[ack_expected] = -1;	// clear timer
+				buffered_cnt --;	// make a room for comming packet in buffer
+				inc(ack_expected);
+			}
+			deal_message();		// have empty seat in window
 		}
+
 		fprintf(log_file, "after\n");
-		fprintf(log_file, "ack_expected %d, received_ack %d, next_to_send %d\n", ack_expected, ack_received, next_to_send);
+		fprintf(log_file, "ack_expected %d, received_ack %d, next_to_send %d, buffer_cnt %d\n", ack_expected, ack_received, next_to_send, buffered_cnt);
 		fprintf(log_file, "\n\n");
 		fprintf(log_file, "===========================================================");
 		fprintf(log_file, "\n\n");
@@ -235,19 +326,31 @@ void Sender_FromLowerLayer(struct packet *pkt)
 void Sender_Timeout()
 {
 	// iterate the buffer_timer_list and update them
-	// if find a timeout buffer, resend it.
 	int *a_timer = buffer_timer;
-	for(seq_nr i = 0; i <= MAX_SEQ; i++){
+	for(seq_nr i = 0; i <= MAX_SEQ; i++, a_timer++){
 		if(*a_timer == -1)	// not set
 			continue;
-		else if(*a_timer == 1)	/*TODO: this is 0.4s*/
-			resend_packet(i);
 		else
 			*a_timer = *a_timer + 1;
-
-		a_timer ++;
 	}
 
-	// restart physical timer
-	Sender_StartTimer(MIN_TIME);
+	// deal oldest time_out
+	if(buffer_timer[ack_expected] == TIME_OUT){
+		next_to_send = ack_expected;
+		for(int j = 0; j < buffered_cnt; j++){
+			resend_packet(next_to_send);
+			inc(next_to_send);
+		}
+		
+	}
+	
+	// update sleep time
+	if(buffered_cnt == 0){
+		sleep_time ++;
+	}
+	if(sleep_time == SLEEP_TIME_MAX){
+		Sender_StopTimer();
+	}
+	else	// restart physical timer
+		Sender_StartTimer(MIN_TIME);
 }
