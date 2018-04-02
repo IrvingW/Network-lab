@@ -1,0 +1,20 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+APP	Makefile	/^APP = qos-lab$/;"	m
+APP_FLOWS_MAX	qos.h	4;"	d
+GREEN	qos.h	/^    GREEN = 0,$/;"	e	enum:qos_color
+RED	qos.h	/^    RED$/;"	e	enum:qos_color
+RTE_TARGET	Makefile	/^RTE_TARGET ?= x86_64-native-linuxapp-gcc$/;"	m
+SRCS-y	Makefile	/^SRCS-y := main.c qos.c $/;"	m
+YELLOW	qos.h	/^    YELLOW,$/;"	e	enum:qos_color
+__QOS_H__	qos.h	2;"	d
+main	main.c	/^main(int argc, char **argv)$/;"	f
+qos_color	qos.h	/^enum qos_color {$/;"	g
+qos_dropper_init	qos.c	/^qos_dropper_init(void)$/;"	f
+qos_dropper_run	qos.c	/^qos_dropper_run(uint32_t flow_id, enum qos_color color, uint64_t time)$/;"	f
+qos_meter_init	qos.c	/^qos_meter_init(void)$/;"	f
+qos_meter_run	qos.c	/^qos_meter_run(uint32_t flow_id, uint32_t pkt_len, uint64_t time)$/;"	f
